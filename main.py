@@ -1,3 +1,7 @@
+import contextlib
+import math
+import os
+import re
 from PIL import ImageTk, Image
 import customtkinter as ctk
 import tkinter.ttk as ttk
@@ -8,26 +12,15 @@ import imghdr
 from drive_dataclasses import DriveFile, DriveFolder, FilePath, User
 from apis import DiscordAPI, MdbAPI
 
-root = DriveFolder("root", [DriveFile("root/bruh.txt"),DriveFile("root/hola.es"),DriveFolder("root/bruh/by", [DriveFile("root/bruh/by/bruh.by")])])
-
-# User's Token
-header = {
-  'authorization': "NTQ5NDU2MTM4Njk4MjI3NzEy.GrquuR.zbsFWB21L_ZlhM3KBNkkdGCJLEWN1r54EPWdX4",
-}
+# 7.5 MB in bytes
+# Limit is 8000000 but room is left for error
+SEVEN_AND_HALF_MB = 7500000
+FIFTY_GB = 50000000000
 
 # File
 files = {
   "file" : ("./europe.jpg", open("./europe.jpg", 'rb'))
 }
-
-# Optional message to send with the picture
-payload = {
-  "content": "Map of Europe"
-}
-
-channel_id = "742932318137876615"
-
-# r = requests.post(f"https://discord.com/api/v9/channels/{channel_id}/messages", data=payload, headers=header, files=files)
 
 class AppPages(ctk.CTk):
   def __init__(self):
@@ -142,7 +135,7 @@ class AppPages(ctk.CTk):
     self.style = ttk.Style(self)
     self.style.theme_use("clam")
     self.style.configure("Treeview", background="#212121", fieldbackground="#212121", foreground="white", font=("Roboto", 13), borderwidth=0)
-    
+
     try: self.login_frame.destroy()
     except: pass
     try: self.register_frame.destroy()
@@ -197,18 +190,84 @@ class AppPages(ctk.CTk):
     ### populate file tree
     # root folder
     tree_root = self.file_tree.insert("", "end", text="root", open=True, tags=("folder", "/"))
-    # TODO: get from api and populate
+    self.filetree_iids["/"] = tree_root
+
+    user_entry = MdbAPI.get_user_filesystem_entry_by_id(self.user.id)
+    folders = user_entry.get("folders")
+    folders.remove("/")
+    folders: list[FilePath] = list(map(lambda folder: FilePath(folder, "folder"), folders))
+
+    filesystem = {
+      "root": {
+        "folder": DriveFolder("/", [], "/"),
+        "treelist_item": tree_root
+      }
+    }
+
+    def find_folder(name: str, parent_name: str) -> dict:
+      matching = []
+      for folder_name in filesystem:
+        if folder_name == name:
+          matching.append(filesystem[folder_name])
+
+      if len(matching) == 1: return matching[0]
+      # else
+      for folder in matching:
+        if FilePath(f"/{folder.parent_path()}/", "folder").name() == parent_name: return folder
+
+    while len(folders):
+      for folder in folders:
+        parent = FilePath(folder.parent_path(), "folder") #            get parent's parent
+        parent_treelist_item = find_folder(parent.name(), FilePath(f"/{parent.parent_path()}/", "folder").name()).get("treelist_item")
+
+        filesystem[folder.name()] = {
+          "folder": DriveFolder(folder, [], folder.parent_path()),
+          "treelist_item": self.file_tree.insert(parent_treelist_item, "end", text=folder.name(), open=True, tags=("folder", folder.path()))
+        }
+
+        self.filetree_iids[folder.path()] = filesystem[folder.name()].get("treelist_item")
+        folders.remove(folder)
+
+    files = user_entry.get("files")
+    files: list[FilePath] = list(map(lambda file: FilePath(file, "file"), files))
+
+    while len(files):
+      for file in files:
+        containing_dir = FilePath(file.parent_path(), "folder")
+        containing_dir_treelist_item = find_folder(containing_dir.name(), FilePath(f"/{containing_dir.parent_path()}/", "folder").name()).get("treelist_item")
+        self.filetree_iids[file.path()] = self.file_tree.insert(containing_dir_treelist_item, "end", text=file.name(), open=True, tags=("file", file.path()))
+        files.remove(file)
 
     # file tree contextmenu
     self.file_tree_contextmenu = tk.Menu(master=self.file_tree_frame, tearoff=False)
-    self.file_tree_contextmenu.add_command(label="View", command=lambda: self.view_file(self.get_path()))
-    self.file_tree_contextmenu.add_command(label="Download", command=lambda: self.download_file(self.get_path()))
-    self.file_tree_contextmenu.add_command(label="Rename", command=lambda: self.rename_file(self.get_path()))
-    self.file_tree_contextmenu.add_command(label="Delete", command=lambda: self.delete_file(self.get_path()))
-    self.file_tree_contextmenu.add_command(label="New Folder", command=lambda: self.new_folder(self.get_path()))
+    self.file_tree_contextmenu.add_command(label="View", command=lambda: self.view_file(self.get_FilePath_obj()))
+    self.file_tree_contextmenu.add_command(label="Download", command=lambda: self.download_file(self.get_FilePath_obj()))
+    self.file_tree_contextmenu.add_command(label="Rename", command=lambda: self.rename_file(self.get_FilePath_obj(), "File"))
+    self.file_tree_contextmenu.add_command(label="Delete", command=lambda: self.delete_file(self.get_FilePath_obj()))
+    self.file_tree_contextmenu.add_command(label="New Folder", command=lambda: self.new_folder(self.get_FilePath_obj()))
+
+    # file tree contextmenu for folders only
+    self.file_tree_folder_contextmenu = tk.Menu(master=self.file_tree_frame, tearoff=False)
+    self.file_tree_folder_contextmenu.add_command(label="Rename", command=lambda: self.rename_file(self.get_FilePath_obj(), "Folder"))
+    self.file_tree_folder_contextmenu.add_command(label="Delete", command=lambda: self.delete_file(self.get_FilePath_obj()))
+    self.file_tree_folder_contextmenu.add_command(label="New Folder", command=lambda: self.new_folder(self.get_FilePath_obj()))
 
     # bind right click to file tree contextmenu
     self.file_tree.bind("<Button-3>", self.open_file_tree_contextmenu)
+
+    def set_selected_dir(event):
+      with contextlib.suppress(IndexError):
+        # get the item that was right clicked
+        item = self.file_tree.identify("item", event.x, event.y)
+
+        # select the item
+        self.file_tree.selection_set(item)
+
+        # only for folders
+        if self.selection_has_tag("folder"):
+          self.selected_dir = self.get_FilePath_obj()
+
+    self.file_tree.bind("<Button-1>", set_selected_dir)
 
     ### view_and_upload_header_frame
 
@@ -277,7 +336,8 @@ class AppPages(ctk.CTk):
 
 class Application(AppPages):
   user: User or None = None
-  selected_dir: DriveFolder or None = None
+  selected_dir: FilePath or None = None
+  filetree_iids: dict = { }
 
   def __init__(self):
     super().__init__()
@@ -311,8 +371,16 @@ class Application(AppPages):
 
       if user.get("token") is None:
         return self.show_token_entry_screen()
-
+      
       self.user.token = user.get("token")
+
+      if user.get("server_id") is None:
+        DiscordAPI.set_token(self.user.token)
+        self.user.set_server_id(DiscordAPI.create_database_server(self.user.id))
+        DiscordAPI.set_database_server_id(self.user.server_id)
+      else:
+        self.user.set_server_id(user.get("server_id"))
+
       self.show_main()
     else:
       self.invalid_login()
@@ -345,15 +413,23 @@ class Application(AppPages):
     self.enter_token_button.configure(state="disabled")
 
     self.user.set_token(token)
-    self.enter_token_frame.destroy()
+    DiscordAPI.set_token(token)
+    self.user.set_server_id(DiscordAPI.create_database_server(self.user.id))
+    DiscordAPI.set_database_server_id(self.user.server_id)
+    for widget in self.winfo_children():
+      widget.destroy()
     self.show_main()
 
   def get_selected(self):
     return self.file_tree.selection()[0]
 
-  def get_path(self, tag) -> FilePath:
-    # the path will be the second given tag
-    return FilePath(self.file_tree.item(self.get_selected(), "tags")[0])
+  def get_FilePath_obj(self) -> FilePath:
+    return FilePath(
+      # path
+      self.file_tree.item(self.get_selected(), "tags")[1],
+      # datatype
+      self.file_tree.item(self.get_selected(), "tags")[0]
+    )
 
   def selection_has_tag(self, tag):
     return tag in self.file_tree.item(self.file_tree.selection()[0], "tags")
@@ -364,8 +440,7 @@ class Application(AppPages):
     if self.selected_dir is None:
       return messagebox.showerror("Upload Files", "No folder has been selected as the destination for the file upload. Right click on a folder to select it.")
 
-    if messagebox.askokcancel("Upload Files", f"Files will be uploaded to {self.selected_dir.path()}") != "ok": return
-
+    if not messagebox.askokcancel("Upload Files", f"Files will be uploaded to {self.selected_dir.path()}"): return
     for file in files:
       self.upload_file(file)
 
@@ -375,29 +450,240 @@ class Application(AppPages):
     self.selected_dir = None
 
   def upload_file(self, file):
-    
-    print(file)
+    name = ".".join(file.split("/")[-1].split(".")[:-1])
+    ext = file.split("/")[-1].split(".")[-1]
+
+    if re.match(r"^[a-zA-Z0-9_\-]+$", name) is None:
+      rn_win = ctk.CTkToplevel(self)
+      rn_win.title("Rename File")
+      rn_win.geometry("250x200")
+      rn_win.attributes("-topmost", True)
+      rn_win.resizable(False, False)
+
+      ctk.CTkLabel(rn_win, text="File name should be alphanumeric").pack()
+      ctk.CTkLabel(rn_win, text="It may contain underscores & dashes").pack()
+      ctk.CTkLabel(rn_win, text="Rename File").pack(pady=(10, 0))
+      name_entry = ctk.CTkEntry(rn_win)
+      name_entry.pack(pady=(0, 10))
+
+      name_entry.insert(0, name)
+
+      old_name_frame = ctk.CTkFrame(rn_win)
+      old_name_frame.pack(side=tk.BOTTOM, pady=(0, 10), ipadx=5)
+
+      ctk.CTkLabel(old_name_frame, text="Old Name:").pack()
+      ctk.CTkLabel(old_name_frame, text=name).pack()
+
+      def enter_event(file):
+        name = name_entry.get()
+        if re.match(r"^[a-zA-Z0-9_\-]+$", name) is None:
+          messagebox.showerror("Invalid File Name", "The file name should be alphanumeric. It may contain underscores and dashes.")
+        else:
+          rn_win.destroy()
+          os.rename(file, f"{os.path.dirname(file)}/{name}.{ext}")
+          file = f"{os.path.dirname(file)}/{name}.{ext}"
+          self._upload_file(file, name, ext)
+
+      name_entry.bind("<Return>", lambda e: enter_event(file))
+    else:
+      file = f"{os.path.dirname(file)}/{name}.{ext}"
+      self._upload_file(file, name, ext)
+
+  def _upload_file(self, absolute_filepath, name, ext):
+    ### error handling is done, ready to upload
+
+    # get file size
+    size = os.path.getsize(absolute_filepath)
+
+    if size > FIFTY_GB:
+      return messagebox.showerror("File Too Large", "Maximum file size is 50 GB")
+
+    # how many chunks will the file be split into
+    chunks = math.ceil(size / SEVEN_AND_HALF_MB)
+
+    with open(absolute_filepath, "rb") as f:
+      file = f.read()
+
+    with contextlib.suppress(FileExistsError):
+      os.mkdir("./tmp/")
+
+    for i in range(chunks):
+      chunk = file[i * SEVEN_AND_HALF_MB: (i + 1) * SEVEN_AND_HALF_MB]
+      with open(f"./tmp/{i}", "wb") as f:
+        f.write(chunk)
 
   def download_file(self, filepath: FilePath):
     pass
 
-  def rename_file(self, filepath: FilePath):
-    pass
+  def rename_file(self, filepath: FilePath, type: str):
+    rn_win = ctk.CTkToplevel(self)
+    rn_win.title(f"Rename {type}")
+    rn_win.geometry("200x200")
+    rn_win.attributes("-topmost", True)
+    rn_win.resizable(False, False)
+
+    ctk.CTkLabel(rn_win, text=f"Enter New {type} Name").pack()
+    name_entry = ctk.CTkEntry(rn_win)
+    name_entry.pack(pady=10)
+
+    if type == "Folder":
+      name_entry.insert(0, filepath.name())
+    else:
+      name_entry.insert(0, ".".join(filepath.name().split(".")[:-1]))
+
+    old_name_frame = ctk.CTkFrame(rn_win)
+    old_name_frame.pack(side=tk.BOTTOM)
+    ctk.CTkLabel(old_name_frame, text="Renaming:").pack()
+    ctk.CTkLabel(old_name_frame, text=f"/{filepath.name()}/" if type == "Folder" else filepath.name()).pack()
+
+    old_name = name_entry.get()
+
+    # function for enter key
+    def enter_key():
+      name = name_entry.get().strip()
+      if name == old_name: return rn_win.destroy()
+
+      if name and re.match(r"^[a-zA-Z0-9_\-]+$", name):
+        extension = ""
+        extension = "." + filepath.name().split(".")[-1] if type == "File" else "/"
+        userfiles = MdbAPI.get_user_files(self.user.id) if type == "File" else MdbAPI.get_user_folders(self.user.id)
+
+        # rename in list of user files
+        index = userfiles.index(filepath.path())
+        userfiles[index] = "/".join(userfiles[index].split("/")[:(-2 if type == "Folder" else -1)]) + "/" + name + extension
+
+        # get entry_id of user's filesystem
+        entry_id = MdbAPI.get_user_filesystem_entry_by_id(self.user.id).get("_id")
+
+        # update in DB
+        if type == "Folder":
+          MdbAPI.update_user_folders(entry_id, userfiles)
+          MdbAPI.update_folder_path(
+            MdbAPI.get_channel_by_folder_path(filepath.path()).get("_id"),
+            userfiles[index] # FIXME: might be error here
+          )
+        else:
+          MdbAPI.update_user_files(entry_id, userfiles)
+
+        # rename in the treeview
+        iid_of_item = self.filetree_iids.get(filepath.path())
+        self.file_tree.item(self.filetree_iids.get(filepath.path()), text=name + (extension if type == "File" else ""), tags=(type.lower(), userfiles[index]))
+        del self.filetree_iids[filepath.path()]
+        self.filetree_iids[userfiles[index]] = iid_of_item
+
+        rn_win.destroy()
+      else:
+        messagebox.showerror(f"Rename {type}", f"Invalid {type.lower()} name. {type} name can only contain alphanumeric characters, dashes, and underscores")
+        name_entry.delete(0, tk.END)
+        name_entry.focus()
+
+    # event listener for enter key
+    rn_win.bind("<Return>", lambda event: enter_key())
 
   def delete_file(self, filepath: FilePath):
-    pass
+    # sourcery skip: extract-method, for-append-to-extend, hoist-similar-statement-from-if, hoist-statement-from-if, list-comprehension, move-assign-in-block
+    if filepath.path() == "/": return messagebox.showerror("Delete File", "Cannot delete root folder")
+
+    user_filesystem_entry = MdbAPI.get_user_filesystem_entry_by_id(self.user.id)
+    user_files = MdbAPI.update_user_files(_id, user_files)
+
+    if filepath.is_folder():
+      user_folders = user_filesystem_entry.get("folders")
+      user_files = user_filesystem_entry.get("files")
+      _id = user_filesystem_entry.get("_id")
+
+      folders_to_remove = []
+      files_to_remove = []
+
+      for folder in user_folders:
+        if folder.startswith(filepath.path()):
+          folders_to_remove.append(folder)
+      
+      for file in user_files:
+        if file.startswith(filepath.path()):
+          files_to_remove.append(file)
+
+      # removing has to be done separately otherwise the loops are messed up due to the list changing as it's iterating
+      for folder in folders_to_remove:
+        user_folders.remove(folder)
+      
+      for file in files_to_remove:
+        user_files.remove(file)
+
+      MdbAPI.update_user_folders(_id, user_folders)
+      
+      # remove from treeview
+      self.file_tree.delete(self.filetree_iids.get(filepath.path()))
+      del self.filetree_iids[filepath.path()]
+    
+    else:
+      user_files = user_filesystem_entry.get("files")
+      _id = user_filesystem_entry.get("_id")
+
+      user_files.remove(filepath.path())
+
+      # remove from treeview
+      self.file_tree.delete(self.filetree_iids.get(filepath.path()))
+      del self.filetree_iids[filepath.path()]
 
   def new_folder(self, filepath: FilePath):
-    pass
+    if not filepath.is_folder():
+      filepath = FilePath(f"/{filepath.parent_path()}/", "folder")
+
+    nf_win = ctk.CTkToplevel(self)
+    nf_win.title("Create New Folder")
+    nf_win.geometry("200x200")
+    nf_win.attributes("-topmost", True)
+    nf_win.resizable(False, False)
+
+    ctk.CTkLabel(nf_win, text="Enter Folder Name").pack()
+    name_entry = ctk.CTkEntry(nf_win)
+    name_entry.pack(pady=10)
+
+    path_notice_frame = ctk.CTkFrame(nf_win)
+    path_notice_frame.pack(side=tk.BOTTOM)
+    ctk.CTkLabel(path_notice_frame, text="Folder will be created in").pack()
+    ctk.CTkLabel(path_notice_frame, text=filepath.path() if filepath.path().startswith("/") else f"/{filepath.path()}/").pack()
+
+    # function for enter key
+    def enter_key():
+      name = name_entry.get().strip()
+
+      if name and re.match(r"^[a-zA-Z0-9_\-]+$", name):
+        name += "/"
+        new_folder: FilePath = self.create_new_folder(FilePath(filepath.path() + name, "folder"))
+        DiscordAPI.create_channel(self.user.id, new_folder) #FIXME: not working
+        nf_win.destroy()
+      else:
+        messagebox.showerror("Create New Folder", "Invalid folder name. Folder name can only contain alphanumeric characters, dashes, and underscores.")
+        name_entry.delete(0, tk.END)
+        name_entry.focus()
+
+    # event listener for enter key
+    name_entry.bind("<Return>", lambda event: enter_key())
+
+    # event listener for clearing entry
+    name_entry.bind("<Control-BackSpace>", lambda event: name_entry.delete(0, tk.END))
 
   def view_file(self, filepath: FilePath):
     pass
 
-  def drag_file(self, filepath: FilePath):
-    pass
+  def create_new_folder(self, filepath: FilePath) -> str:
+    ### rename in tree
 
-  def drop_file(self, filepath: FilePath):
-    pass
+    # get parent path
+    parent_path = filepath.path()[:-1]
+    while not parent_path.endswith("/"):
+      parent_path = parent_path[:-1]
+
+    self.filetree_iids[filepath.path()] = self.file_tree.insert(self.filetree_iids.get(parent_path), "end", text=filepath.name(), open=True, tags=("folder", filepath.path()))
+
+    ### rename in db
+    user_files_entry = MdbAPI.get_user_filesystem_entry_by_id(self.user.id)
+    user_folders: list = user_files_entry.get("folders")
+    user_folders.append(filepath.path())
+    MdbAPI.update_user_folders(user_files_entry.get("_id"), user_folders)
+    return filepath.path()
 
   def open_file_tree_contextmenu(self, event):
     # get the item that was right clicked
@@ -410,7 +696,7 @@ class Application(AppPages):
     if not self.selection_has_tag("folder"):
       self.file_tree_contextmenu.post(event.x_root, event.y_root) # open menu
     else:
-      self.selected_dir = DriveFolder(self.get_path("folder"))
+      self.file_tree_folder_contextmenu.post(event.x_root, event.y_root) # open menu
 
   # list of filepaths
   def preview_files_before_uploading(self, files: list[str]):
@@ -439,7 +725,8 @@ class Application(AppPages):
             self.preview_label.pack(padx=5, pady=5)
       except UnicodeDecodeError:
         # show messagebox popup
-        messagebox.showinfo(title="Note", message=f"Cannot preview file: {file}\n\nThe file can still be uploaded, though.")
+        self.preview_label = tk.Label(master=self.preview_frame, text=file, bg="#212121", fg="white")
+        self.preview_label.pack(padx=5, pady=5)
 
   def get_explorer_selected_files(self) -> list[str]:
     return self.explorer_selected_files
