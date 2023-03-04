@@ -104,3 +104,33 @@ class DriveFolder(DriveFile):
 
   def __str__(self) -> str:
     return f"<folder - {self._path}>"
+  
+@dataclass
+class MdbChannel(object):
+  _id: int
+  owner_id: int
+  channel_id: str
+  channel_name: str
+  folder_path: str
+
+  @property
+  def id(self):
+    return self.channel_id
+  
+@dataclass
+class MdbFile(object):
+  _id: int
+  owner_id: int
+  chunk_urls: list[str]
+  file_name: str
+  folder_path: str
+  file_extension: str
+  size: str
+
+  @property
+  def full_name(self):
+    return f"{self.file_name}.{self.file_extension}"
+  
+  @property
+  def path(self):
+    return f"{self.folder_path}{self.full_name}"

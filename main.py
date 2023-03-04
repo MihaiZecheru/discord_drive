@@ -9,23 +9,26 @@ import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
 import imghdr
-from drive_dataclasses import DriveFile, DriveFolder, FilePath, User
+from pathlib import Path
+from drive_dataclasses import DriveFolder, FilePath, MdbChannel, MdbFile, User
 from apis import DiscordAPI, MdbAPI
 
-# 7.5 MB in bytes
-# Limit is 8000000 but room is left for error
-SEVEN_AND_HALF_MB = 7500000
+# 8.38 MB in bytes
+SEVEN_AND_HALF_MB = 8380000
 FIFTY_GB = 50000000000
 
-# File
-files = {
-  "file" : ("./europe.jpg", open("./europe.jpg", 'rb'))
-}
+def convert_bytes(size):
+    """ Convert bytes to KB, MB, GB, or TB """
+    for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
+        if size < 1024.0:
+            return "%3.1f %s" % (size, x)
+        size /= 1024.0
 
 class AppPages(ctk.CTk):
   def __init__(self):
     super().__init__()
     self.geometry("500x500")
+    self.iconbitmap("./static/icon.ico")
     self.title("DiscordDrive")
     self.resizable(False, False)
 
@@ -192,7 +195,7 @@ class AppPages(ctk.CTk):
     tree_root = self.file_tree.insert("", "end", text="root", open=True, tags=("folder", "/"))
     self.filetree_iids["/"] = tree_root
 
-    user_entry = MdbAPI.get_user_filesystem_entry_by_id(self.user.id)
+    user_entry = MdbAPI.get_user_filesystem_entry_by_userid(self.user.id)
     folders = user_entry.get("folders")
     folders.remove("/")
     folders: list[FilePath] = list(map(lambda folder: FilePath(folder, "folder"), folders))
@@ -235,7 +238,7 @@ class AppPages(ctk.CTk):
       for file in files:
         containing_dir = FilePath(file.parent_path(), "folder")
         containing_dir_treelist_item = find_folder(containing_dir.name(), FilePath(f"/{containing_dir.parent_path()}/", "folder").name()).get("treelist_item")
-        self.filetree_iids[file.path()] = self.file_tree.insert(containing_dir_treelist_item, "end", text=file.name(), open=True, tags=("file", file.path()))
+        self.file_tree.insert(containing_dir_treelist_item, "end", text=file.name(), open=True, tags=("file", file.path()))
         files.remove(file)
 
     # file tree contextmenu
@@ -373,14 +376,14 @@ class Application(AppPages):
         return self.show_token_entry_screen()
       
       self.user.token = user.get("token")
+      DiscordAPI.set_token(self.user.token)
 
       if user.get("server_id") is None:
-        DiscordAPI.set_token(self.user.token)
         self.user.set_server_id(DiscordAPI.create_database_server(self.user.id))
-        DiscordAPI.set_database_server_id(self.user.server_id)
       else:
         self.user.set_server_id(user.get("server_id"))
 
+      DiscordAPI.set_database_server_id(self.user.server_id)
       self.show_main()
     else:
       self.invalid_login()
@@ -457,6 +460,7 @@ class Application(AppPages):
       rn_win = ctk.CTkToplevel(self)
       rn_win.title("Rename File")
       rn_win.geometry("250x200")
+      rn_win.iconbitmap("./static/icon.ico")
       rn_win.attributes("-topmost", True)
       rn_win.resizable(False, False)
 
@@ -511,14 +515,45 @@ class Application(AppPages):
       chunk = file[i * SEVEN_AND_HALF_MB: (i + 1) * SEVEN_AND_HALF_MB]
       with open(f"./tmp/{i}", "wb") as f:
         f.write(chunk)
+    
+    # get discord channel to upload in
+    channel: MdbChannel = MdbAPI.get_channel_by_folder_path(self.user.id, self.selected_dir.path())
+
+    # note: all files are closed inside of the upload_file_chunk function
+    file_chunk_urls = [ DiscordAPI.upload_file_chunk(open(f"./tmp/{i}", "rb"), channel, self.user, self.selected_dir, name, ext) for i in range(chunks) ]
+
+    # upload to file tracker in MDB
+    MdbAPI.upload_file(self.user.id, self.selected_dir.path(), name, ext, convert_bytes(os.path.getsize(absolute_filepath)).replace(" ", ""), file_chunk_urls)
+
+    # delete all files in tmp dir
+    for f in os.listdir('./tmp'):
+      os.remove(os.path.join('./tmp', f))
+
+    # add file to file tree
+    self.file_tree.insert(self.filetree_iids.get(self.selected_dir.path()), "end", text=f"{name}.{ext}", tags=("file", f"{self.selected_dir.path()}{name}.{ext}"))
 
   def download_file(self, filepath: FilePath):
-    pass
+    containing_folder = filepath.parent_path()
+    mdbfile: MdbFile = MdbAPI.get_file_metadata(self.user.id, containing_folder, filepath.name())
+
+    # create downloads folder if it doesn't exist
+    with contextlib.suppress(FileExistsError):
+      os.mkdir(".\\downloads\\")
+
+    # get file chunks
+    with open(f".\\downloads\\{filepath.name()}", "wb") as f:
+      for url in mdbfile.chunk_urls:
+        for chunk in DiscordAPI.get_attachment_by_url(url):
+          f.write(chunk)
+    
+    # open containing folder
+    os.startfile(".\\downloads\\")
 
   def rename_file(self, filepath: FilePath, type: str):
     rn_win = ctk.CTkToplevel(self)
     rn_win.title(f"Rename {type}")
     rn_win.geometry("200x200")
+    rn_win.iconbitmap("./static/icon.ico")
     rn_win.attributes("-topmost", True)
     rn_win.resizable(False, False)
 
@@ -553,7 +588,7 @@ class Application(AppPages):
         userfiles[index] = "/".join(userfiles[index].split("/")[:(-2 if type == "Folder" else -1)]) + "/" + name + extension
 
         # get entry_id of user's filesystem
-        entry_id = MdbAPI.get_user_filesystem_entry_by_id(self.user.id).get("_id")
+        entry_id = MdbAPI.get_user_filesystem_entry_by_userid(self.user.id).get("_id")
 
         # update in DB
         if type == "Folder":
@@ -584,13 +619,12 @@ class Application(AppPages):
     # sourcery skip: extract-method, for-append-to-extend, hoist-similar-statement-from-if, hoist-statement-from-if, list-comprehension, move-assign-in-block
     if filepath.path() == "/": return messagebox.showerror("Delete File", "Cannot delete root folder")
 
-    user_filesystem_entry = MdbAPI.get_user_filesystem_entry_by_id(self.user.id)
-    user_files = MdbAPI.update_user_files(_id, user_files)
+    user_filesystem_entry = MdbAPI.get_user_filesystem_entry_by_userid(self.user.id)
+    user_files = user_filesystem_entry.get("files")
+    _id = user_filesystem_entry.get("_id")
 
     if filepath.is_folder():
       user_folders = user_filesystem_entry.get("folders")
-      user_files = user_filesystem_entry.get("files")
-      _id = user_filesystem_entry.get("_id")
 
       folders_to_remove = []
       files_to_remove = []
@@ -617,10 +651,8 @@ class Application(AppPages):
       del self.filetree_iids[filepath.path()]
     
     else:
-      user_files = user_filesystem_entry.get("files")
-      _id = user_filesystem_entry.get("_id")
-
       user_files.remove(filepath.path())
+      user_files = MdbAPI.update_user_files(_id, user_files)
 
       # remove from treeview
       self.file_tree.delete(self.filetree_iids.get(filepath.path()))
@@ -633,6 +665,7 @@ class Application(AppPages):
     nf_win = ctk.CTkToplevel(self)
     nf_win.title("Create New Folder")
     nf_win.geometry("200x200")
+    nf_win.iconbitmap("./static/icon.ico")
     nf_win.attributes("-topmost", True)
     nf_win.resizable(False, False)
 
@@ -651,8 +684,8 @@ class Application(AppPages):
 
       if name and re.match(r"^[a-zA-Z0-9_\-]+$", name):
         name += "/"
-        new_folder: FilePath = self.create_new_folder(FilePath(filepath.path() + name, "folder"))
-        DiscordAPI.create_channel(self.user.id, new_folder) #FIXME: not working
+        new_folder: str = self.create_new_folder(FilePath(filepath.path() + name, "folder"))
+        DiscordAPI.create_channel(self.user.id, new_folder)
         nf_win.destroy()
       else:
         messagebox.showerror("Create New Folder", "Invalid folder name. Folder name can only contain alphanumeric characters, dashes, and underscores.")
@@ -679,7 +712,7 @@ class Application(AppPages):
     self.filetree_iids[filepath.path()] = self.file_tree.insert(self.filetree_iids.get(parent_path), "end", text=filepath.name(), open=True, tags=("folder", filepath.path()))
 
     ### rename in db
-    user_files_entry = MdbAPI.get_user_filesystem_entry_by_id(self.user.id)
+    user_files_entry = MdbAPI.get_user_filesystem_entry_by_userid(self.user.id)
     user_folders: list = user_files_entry.get("folders")
     user_folders.append(filepath.path())
     MdbAPI.update_user_folders(user_files_entry.get("_id"), user_folders)
