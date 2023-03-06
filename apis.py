@@ -70,6 +70,10 @@ class DiscordAPI(object):
 
     MdbAPI.create_channel(user_id, _id, name, path)
 
+  @classmethod
+  def update_channel_description(cls, channel_id: str, new_description: str):
+    return requests.patch(f"{cls.base}/channels/{channel_id}", headers=cls.header, data=json.dumps({ "topic": new_description })).json()
+
   @classmethod                                                                                                                # returns attachment url (chunk url)
   def upload_file_chunk(cls, chunk: BufferedReader, channel: MdbChannel, user: User, folder: FilePath, name: str, ext: str) -> str:
     # 'chunk' is a chunk of a file saved to its own file
@@ -80,7 +84,7 @@ class DiscordAPI(object):
   
   @classmethod
   def get_attachment_by_url(cls, url: str) -> dict:
-    return requests.get(url, headers={ "authorization": cls.token }).iter_content(1024)
+    return requests.get(url).iter_content(1024)
 
 class MdbAPI(object):
   mdb_header: dict = { "Authorization": "dac5523e-2be9-4d8a-afe4-492b5bf297fa" }
@@ -123,6 +127,14 @@ class MdbAPI(object):
   @classmethod
   def update_user_folders(cls, entry_id: int, folders: list[str]):
     return requests.put(f"https://mdb.mzecheru.com/api/24/main/filesystem/{entry_id}/folders", json={ "value": folders }, headers=cls.mdb_header).json()
+  
+  @classmethod
+  def update_filename(cls, entry_id: int, newname: str):
+    return requests.put(f"https://mdb.mzecheru.com/api/24/main/files/{entry_id}/file_name", json={ "value": newname }, headers=cls.mdb_header).json()
+  
+  @classmethod
+  def update_file_containing_folder(cls, entry_id: int, new_folder_path: str):
+    return requests.put(f"https://mdb.mzecheru.com/api/24/main/files/{entry_id}/folder_path", json={ "value": new_folder_path }, headers=cls.mdb_header).json()
   
   @classmethod
   def get_channel(cls, user_id: int, channel_id: str):
@@ -171,3 +183,16 @@ class MdbAPI(object):
       size=r[0].get("size"),
       chunk_urls=r[0].get("chunk_urls")
     )
+
+  @classmethod
+  def get_files_with_folder_path(cls, user_id: int, parent_folder: str) -> list[MdbFile]:
+    r = requests.get(f"https://mdb.mzecheru.com/api/24/main/files/?owner_id={user_id}&folder_path={parent_folder}", headers=cls.mdb_header).json()
+    return [MdbFile(
+      _id=i.get("_id"),
+      owner_id=i.get("owner_id"),
+      folder_path=i.get("folder_path"),
+      file_name=i.get("file_name"),
+      file_extension=i.get("file_extension"),
+      size=i.get("size"),
+      chunk_urls=i.get("chunk_urls")
+    ) for i in r]

@@ -8,7 +8,9 @@ import tkinter.ttk as ttk
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
-import imghdr
+os.add_dll_directory("C:\\Program Files\\VideoLAN\\VLC")
+import imghdr, mimetypes, vlc
+from tkVideoPlayer import TkinterVideo
 from pathlib import Path
 from drive_dataclasses import DriveFolder, FilePath, MdbChannel, MdbFile, User
 from apis import DiscordAPI, MdbAPI
@@ -23,6 +25,35 @@ def convert_bytes(size):
         if size < 1024.0:
             return "%3.1f %s" % (size, x)
         size /= 1024.0
+
+class Screen(tk.Frame):
+  """
+      Screen widget: Embedded video player from local or youtube
+  """
+  def __init__(self, parent, src: str):
+      tk.Frame.__init__(self, parent, bg="black")
+
+      # Open the video source
+      self.video_source = src
+
+      # Canvas where to draw video output
+      self.canvas = tk.Canvas(self, width=1024, height=576, bg="black", highlightthickness=0)
+      self.canvas.pack()
+
+      # Creating VLC player
+      self.instance = vlc.Instance()
+      self.player = self.instance.media_player_new()
+
+  def get_handle(self):
+      # Getting frame ID
+      return self.winfo_id()
+
+  def play(self):
+      Media = self.instance.media_new(self.video_source)
+      Media.get_mrl()
+      self.player.set_media(Media)
+      self.player.set_hwnd(self.get_handle())
+      self.player.play()
 
 class AppPages(ctk.CTk):
   def __init__(self):
@@ -238,7 +269,7 @@ class AppPages(ctk.CTk):
       for file in files:
         containing_dir = FilePath(file.parent_path(), "folder")
         containing_dir_treelist_item = find_folder(containing_dir.name(), FilePath(f"/{containing_dir.parent_path()}/", "folder").name()).get("treelist_item")
-        self.file_tree.insert(containing_dir_treelist_item, "end", text=file.name(), open=True, tags=("file", file.path()))
+        self.filetree_iids[file.path()] = self.file_tree.insert(containing_dir_treelist_item, "end", text=file.name(), open=True, tags=("file", file.path()))
         files.remove(file)
 
     # file tree contextmenu
@@ -530,7 +561,8 @@ class Application(AppPages):
       os.remove(os.path.join('./tmp', f))
 
     # add file to file tree
-    self.file_tree.insert(self.filetree_iids.get(self.selected_dir.path()), "end", text=f"{name}.{ext}", tags=("file", f"{self.selected_dir.path()}{name}.{ext}"))
+    path = f"{self.selected_dir.path()}{name}.{ext}"
+    self.filetree_iids[path] = self.file_tree.insert(self.filetree_iids.get(self.selected_dir.path()), "end", text=f"{name}.{ext}", tags=("file", path))
 
   def download_file(self, filepath: FilePath):
     containing_folder = filepath.parent_path()
@@ -540,7 +572,7 @@ class Application(AppPages):
     with contextlib.suppress(FileExistsError):
       os.mkdir(".\\downloads\\")
 
-    # get file chunks
+    # create actual file from individual file chunks
     with open(f".\\downloads\\{filepath.name()}", "wb") as f:
       for url in mdbfile.chunk_urls:
         for chunk in DiscordAPI.get_attachment_by_url(url):
@@ -548,6 +580,9 @@ class Application(AppPages):
     
     # open containing folder
     os.startfile(".\\downloads\\")
+    
+    # return filepath
+    return f".\\downloads\\{filepath.name()}"
 
   def rename_file(self, filepath: FilePath, type: str):
     rn_win = ctk.CTkToplevel(self)
@@ -592,13 +627,52 @@ class Application(AppPages):
 
         # update in DB
         if type == "Folder":
+          # update in  api: /users/folders
           MdbAPI.update_user_folders(entry_id, userfiles)
+
+          # update in api: /users/files
+          filepaths = MdbAPI.get_user_files(self.user.id)
+          for i in range(len(filepaths)):
+            fpath: str = filepaths[i]
+            if fpath.startswith(filepath.path()):
+              filepaths[i] = fpath.replace(filepath.path(), userfiles[index])
+          MdbAPI.update_user_files(entry_id, filepaths)
+
+          # get channel entry
+          channel: MdbChannel = MdbAPI.get_channel_by_folder_path(self.user.id, filepath.path())
+
+          # update in api: /channels/
           MdbAPI.update_folder_path(
-            MdbAPI.get_channel_by_folder_path(filepath.path()).get("_id"),
-            userfiles[index] # FIXME: might be error here
+            # get entry id of channel
+            channel._id,
+            # new folder name
+            userfiles[index]
           )
+
+          # update folder path in the discord server channel description
+          DiscordAPI.update_channel_description(channel.channel_id, userfiles[index])
+
+          # update in api: /files/folder_path
+          # get every file where folder_path = this directory
+          for file in MdbAPI.get_files_with_folder_path(self.user.id, filepath.path()):
+            file: MdbFile = file
+            MdbAPI.update_file_containing_folder(
+              # get entry id
+              file._id,
+              # new folder name
+              userfiles[index]
+            )
         else:
+          # update in api: /users/files
           MdbAPI.update_user_files(entry_id, userfiles)
+          
+          # update in api: /files/filename
+          MdbAPI.update_filename(
+            # entry id of file in /files/ api
+            MdbAPI.get_file_metadata(self.user.id, filepath.parent_path(), filepath.name())._id,
+            # new name
+            name
+          )
 
         # rename in the treeview
         iid_of_item = self.filetree_iids.get(filepath.path())
@@ -699,7 +773,79 @@ class Application(AppPages):
     name_entry.bind("<Control-BackSpace>", lambda event: name_entry.delete(0, tk.END))
 
   def view_file(self, filepath: FilePath):
-    pass
+      containing_folder = filepath.parent_path()
+      mdbfile: MdbFile = MdbAPI.get_file_metadata(self.user.id, containing_folder, filepath.name())
+
+      # create tmp folder if it doesn't exist
+      with contextlib.suppress(FileExistsError):
+        os.mkdir(".\\tmp\\")
+
+      # create actual file from individual file chunks
+      with open(f".\\tmp\\{filepath.name()}", "wb") as f:
+        for url in mdbfile.chunk_urls:
+          for chunk in DiscordAPI.get_attachment_by_url(url):
+            f.write(chunk)
+
+        # make sure there is only one preview frame
+      with contextlib.suppress(Exception):
+          self.preview_frame.destroy()
+
+      # create viewing frame
+      self.preview_frame = ctk.CTkScrollableFrame(master=self.upload_frame, bg_color="#212121", border_color="white", border_width=1, height=1000)
+      self.preview_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+      # create new window
+      preview_win = ctk.CTkToplevel(self)
+      preview_win.title("View File")
+      preview_win.geometry("500x700")
+      preview_win.iconbitmap("./static/icon.ico")
+      preview_win.attributes("-topmost", True)
+
+      try:
+        # filepath
+        file = f".\\tmp\\{filepath.name()}"
+        # check if file is image
+        if imghdr.what(file) is not None:
+          ### show image file
+
+          def on_closing():
+            preview_win.destroy()
+            # delete tmp file
+            os.remove(file)
+
+          # on close
+          preview_win.protocol("WM_DELETE_WINDOW", on_closing)
+
+          # show image
+          img = ImageTk.PhotoImage(Image.open(file))
+          preview_win.minsize(img.width(), img.height())
+          preview_win.geometry(f"{img.width()}x{img.height()}+0+0")
+          preview_image = tk.Label(master=preview_win, image=img)
+          preview_image.image = img
+          preview_image.pack(padx=5, pady=5)
+        elif mimetypes.guess_type(file)[0].startswith('video'):
+          # videoplayer = TkinterVideo(master=preview_win, scaled=True)
+          # videoplayer.load(file)
+          # videoplayer.pack(expand=True, fill="both")
+          # videoplayer.play()
+          screen = Screen(preview_win, file)
+          screen.play()
+
+          def on_closing():
+            preview_win.destroy()
+            # delete tmp file
+            os.remove(file)
+
+          preview_win.protocol("WM_DELETE_WINDOW", on_closing)
+        else:
+          # show text file
+          with open(file, "r") as f:
+            preview_label = tk.Label(master=preview_win, text=f.read(), bg="#212121", fg="white")
+            preview_label.pack(padx=5, pady=5)
+      except UnicodeDecodeError as e:
+        # show messagebox popup
+        preview_label = tk.Label(master=preview_win, text=file, bg="#212121", fg="white")
+        preview_label.pack(padx=5, pady=5)
 
   def create_new_folder(self, filepath: FilePath) -> str:
     ### rename in tree
