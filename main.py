@@ -8,12 +8,11 @@ import tkinter.ttk as ttk
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
-os.add_dll_directory("C:\\Program Files\\VideoLAN\\VLC")
-import imghdr, mimetypes, vlc
+import imghdr, mimetypes
 from tkVideoPlayer import TkinterVideo
-from pathlib import Path
+import pyperclip
 from drive_dataclasses import DriveFolder, FilePath, MdbChannel, MdbFile, User
-from apis import DiscordAPI, MdbAPI
+from apis import DiscordAPI, MdbAPI, uuid4
 
 # 8.38 MB in bytes
 SEVEN_AND_HALF_MB = 8380000
@@ -25,35 +24,6 @@ def convert_bytes(size):
         if size < 1024.0:
             return "%3.1f %s" % (size, x)
         size /= 1024.0
-
-class Screen(tk.Frame):
-  """
-      Screen widget: Embedded video player from local or youtube
-  """
-  def __init__(self, parent, src: str):
-      tk.Frame.__init__(self, parent, bg="black")
-
-      # Open the video source
-      self.video_source = src
-
-      # Canvas where to draw video output
-      self.canvas = tk.Canvas(self, width=1024, height=576, bg="black", highlightthickness=0)
-      self.canvas.pack()
-
-      # Creating VLC player
-      self.instance = vlc.Instance()
-      self.player = self.instance.media_player_new()
-
-  def get_handle(self):
-      # Getting frame ID
-      return self.winfo_id()
-
-  def play(self):
-      Media = self.instance.media_new(self.video_source)
-      Media.get_mrl()
-      self.player.set_media(Media)
-      self.player.set_hwnd(self.get_handle())
-      self.player.play()
 
 class AppPages(ctk.CTk):
   def __init__(self):
@@ -278,6 +248,7 @@ class AppPages(ctk.CTk):
     self.file_tree_contextmenu.add_command(label="Download", command=lambda: self.download_file(self.get_FilePath_obj()))
     self.file_tree_contextmenu.add_command(label="Rename", command=lambda: self.rename_file(self.get_FilePath_obj(), "File"))
     self.file_tree_contextmenu.add_command(label="Delete", command=lambda: self.delete_file(self.get_FilePath_obj()))
+    self.file_tree_contextmenu.add_command(label="Copy Link", command=lambda: self.create_link(self.get_FilePath_obj()))
     self.file_tree_contextmenu.add_command(label="New Folder", command=lambda: self.new_folder(self.get_FilePath_obj()))
 
     # file tree contextmenu for folders only
@@ -564,6 +535,22 @@ class Application(AppPages):
     path = f"{self.selected_dir.path()}{name}.{ext}"
     self.filetree_iids[path] = self.file_tree.insert(self.filetree_iids.get(self.selected_dir.path()), "end", text=f"{name}.{ext}", tags=("file", path))
 
+  def create_link(self, filepath: FilePath):
+    # get file metadata
+    mdbfile: MdbFile = MdbAPI.get_file_metadata(self.user.id, filepath.parent_path(), filepath.name())
+
+    # create url with random uuid
+    link = f"https://discord-drive.mzecheru.com/{uuid4()}"
+
+    # tie chunk urls to link in database
+    MdbAPI.create_link(self.user.id, link, mdbfile.chunk_urls)
+
+    # copy
+    pyperclip.copy(link)
+
+    # show success message
+    messagebox.showinfo("Link Copied", f"Link has been copied to clipboard:\n\n{link}")
+
   def download_file(self, filepath: FilePath):
     containing_folder = filepath.parent_path()
     mdbfile: MdbFile = MdbAPI.get_file_metadata(self.user.id, containing_folder, filepath.name())
@@ -824,12 +811,10 @@ class Application(AppPages):
           preview_image.image = img
           preview_image.pack(padx=5, pady=5)
         elif mimetypes.guess_type(file)[0].startswith('video'):
-          # videoplayer = TkinterVideo(master=preview_win, scaled=True)
-          # videoplayer.load(file)
-          # videoplayer.pack(expand=True, fill="both")
-          # videoplayer.play()
-          screen = Screen(preview_win, file)
-          screen.play()
+          videoplayer = TkinterVideo(master=preview_win, scaled=True)
+          videoplayer.load(file)
+          videoplayer.pack(expand=True, fill="both")
+          videoplayer.play()
 
           def on_closing():
             preview_win.destroy()
