@@ -1,5 +1,5 @@
 import os, threading
-from flask import Flask, render_template, send_file, request
+from flask import Flask, render_template, send_file, request, send_from_directory
 
 try:
   os.mkdir("./files/")
@@ -73,6 +73,12 @@ def get_file(uuid):
   
   file_path: str = create_file_from(link_obj)
   return send_file(file_path)
+
+favicon_parent_dir: str = os.path.join(app.root_path, "../app/static/")
+
+@app.route('/favicon.ico')
+def favicon():
+  return send_from_directory(favicon_parent_dir, "icon.ico", mimetype="image/x-icon")
 
 if __name__ == "__main__":
   app.run(host="0.0.0.0", port="80", debug=False)
