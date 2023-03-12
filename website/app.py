@@ -1,28 +1,32 @@
-import os
+import os, threading
 from flask import Flask, render_template, send_file, request
 
 try:
   os.mkdir("./files/")
 except FileExistsError: pass
 
-try:
-  with open("./uuids.txt", "r") as f: pass
-except FileNotFoundError:
-  with open("./uuids.txt", "w") as f: pass
+# delete all existing files
+for file in os.listdir("./files/"):
+  os.remove(f"./files/{file}")
 
 # keep track of the created files
 uuids = {}
 
-# populate uuids list
-try:
-  with open("./uuids.txt", "r") as f:
-    for line in f:
-      uuid, path = line.strip().split(";")
-      uuids[uuid] = path
-except ValueError: pass # uuids = {}
-
 from api import DiscordApi, MdbApi, MdbLink
 app = Flask(__name__)
+
+# remove file and uuid from uuids list
+def delete(path: str):
+  # uuid is in the path ./files/{uuid}.ext
+  uuid = path.split("/")[-1].split(".")[0]
+  os.remove(path)
+  del uuids[uuid]
+
+# set a timer to automatically delete a file
+def auto_delete(path: str, seconds: int):
+  t = threading.Timer(seconds, delete, args=[path])
+  t.daemon = True
+  t.start()
 
 # returns a path to the made file
 def create_file_from(link_obj: MdbLink) -> str:
@@ -32,15 +36,13 @@ def create_file_from(link_obj: MdbLink) -> str:
   if uuids.get(link_obj.uuid):
     return file_path
   
-  with open("./uuids.txt", "a") as f:
-    uuids[link_obj.uuid] = file_path
-    f.write(f"{link_obj.uuid};{file_path}\n")
-
   with open(file_path, "wb") as f:
     for url in urls:
       for data_chunk in DiscordApi.get_attachment_by_url(url):
         f.write(data_chunk)
 
+  # automatically delete the file in 20 minutes
+  auto_delete(file_path, 20 * 60)
   return file_path
 
 @app.route("/")
