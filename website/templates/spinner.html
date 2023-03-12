@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.2.1/dist/css/bootstrap.min.css" integrity="sha384-GJzZqFGwb1QTTN6wy59ffF1BuGJpLSa9DkKMp0DgiMDm4iYMj70gZWKYbI706tWS" crossorigin="anonymous">
+  <title>Fetching file...</title>
+</head>
+<body>
+  <br>
+  <h1 class="text-center">Fetching file...</h1>
+  <center>
+    <div class="spinner-grow text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+  </center>
+
+  <div id="uuid" data-uuid="{{uuid}}"></div>
+
+  <script>
+    const uuid = document.getElementById("uuid").dataset.uuid;
+    const rn = Math.floor(Math.random() * 100000) + 1;
+
+    // repeat the request, but including a query param that tells the server it's the second time sending the request
+    // the server will then know to return the file and not the spinner page
+    window.location.href = `${uuid}?u=${rn}`;
+  </script>
+</body>
+</html>
