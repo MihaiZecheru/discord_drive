@@ -541,7 +541,7 @@ class Application(AppPages):
 
     # create url with random uuid
     uuid = uuid4()
-    link = f"https://discord-drive.mzecheru.com/{uuid}"
+    link = f"http://discord-drive.mzecheru.com/{uuid}"
 
     # file extension
     file_extension = filepath.name().split(".")[-1]
