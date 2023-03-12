@@ -1,6 +1,5 @@
 *.pyc
 .env
-uuids.txt
 ./files/
 ./files/*
 DiscordDrive.*
