@@ -1,5 +1,7 @@
 *.pyc
 .env
-./files/
-./files/*
+./website/files/
+./website/files/*
+./app/tmp/
+./app/tmp/*
 DiscordDrive.*
