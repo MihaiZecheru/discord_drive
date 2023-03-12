@@ -540,10 +540,14 @@ class Application(AppPages):
     mdbfile: MdbFile = MdbAPI.get_file_metadata(self.user.id, filepath.parent_path(), filepath.name())
 
     # create url with random uuid
-    link = f"https://discord-drive.mzecheru.com/{uuid4()}"
+    uuid = uuid4()
+    link = f"https://discord-drive.mzecheru.com/{uuid}"
+
+    # file extension
+    file_extension = filepath.name().split(".")[-1]
 
     # tie chunk urls to link in database
-    MdbAPI.create_link(self.user.id, link, mdbfile.chunk_urls)
+    MdbAPI.create_link(self.user.id, link, uuid, file_extension, mdbfile.chunk_urls)
 
     # copy
     pyperclip.copy(link)

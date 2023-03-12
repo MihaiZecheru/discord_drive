@@ -198,5 +198,5 @@ class MdbAPI(object):
     ) for i in r]
   
   @classmethod
-  def create_link(cls, user_id: int, link: str, file_chunk_urls: list[str]):
-    return requests.post("https://mdb.mzecheru.com/api/24/main/links/", json={ "owner_id": user_id, "link": link, "chunk_urls": file_chunk_urls }, headers=cls.mdb_header).json()
+  def create_link(cls, user_id: int, link: str, uuid: str, file_extension: str, file_chunk_urls: list[str]):
+    return requests.post("https://mdb.mzecheru.com/api/24/main/links/", json={ "owner_id": user_id, "link": link, "uuid": uuid, "file_extension": file_extension, "chunk_urls": file_chunk_urls }, headers=cls.mdb_header).json()
