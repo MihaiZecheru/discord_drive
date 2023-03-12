@@ -36,13 +36,15 @@ def create_file_from(link_obj: MdbLink) -> str:
   if uuids.get(link_obj.uuid):
     return file_path
   
+  uuids[link_obj.uuid] = file_path
+  
   with open(file_path, "wb") as f:
     for url in urls:
       for data_chunk in DiscordApi.get_attachment_by_url(url):
         f.write(data_chunk)
 
-  # automatically delete the file in 20 minutes
-  auto_delete(file_path, 20 * 60)
+  # automatically delete the file in 15 minutes
+  auto_delete(file_path, 15 * 60)
   return file_path
 
 @app.route("/")
