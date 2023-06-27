@@ -14,16 +14,16 @@ import pyperclip
 from drive_dataclasses import DriveFolder, FilePath, MdbChannel, MdbFile, User
 from apis import DiscordAPI, MdbAPI, uuid4
 
-# 8.38 MB in bytes
-SEVEN_AND_HALF_MB = 8380000
+# 25 MB in bytes, discord's max file size
+FILE_SIZE_LIMIT = 25000000
 FIFTY_GB = 50000000000
 
 def convert_bytes(size):
-    """ Convert bytes to KB, MB, GB, or TB """
-    for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
-        if size < 1024.0:
-            return "%3.1f %s" % (size, x)
-        size /= 1024.0
+  """ Convert bytes to KB, MB, GB, or TB """
+  for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
+      if size < 1024.0:
+          return "%3.1f %s" % (size, x)
+      size /= 1024.0
 
 class AppPages(ctk.CTk):
   def __init__(self):
@@ -505,7 +505,7 @@ class Application(AppPages):
       return messagebox.showerror("File Too Large", "Maximum file size is 50 GB")
 
     # how many chunks will the file be split into
-    chunks = math.ceil(size / SEVEN_AND_HALF_MB)
+    chunks = math.ceil(size / FILE_SIZE_LIMIT)
 
     with open(absolute_filepath, "rb") as f:
       file = f.read()
@@ -514,7 +514,7 @@ class Application(AppPages):
       os.mkdir("./tmp/")
 
     for i in range(chunks):
-      chunk = file[i * SEVEN_AND_HALF_MB: (i + 1) * SEVEN_AND_HALF_MB]
+      chunk = file[i * FILE_SIZE_LIMIT: (i + 1) * FILE_SIZE_LIMIT]
       with open(f"./tmp/{i}", "wb") as f:
         f.write(chunk)
     
