@@ -76,7 +76,7 @@ class AppPages(ctk.CTk):
     self.login_button.pack(padx=5, pady=5, expand=False)
 
     # 'go to register' button
-    self.go_to_register_button = ctk.CTkButton(master=self.buttons_frame, text="Register", font=("Roboto", 15), command=self.show_register)
+    self.go_to_register_button = ctk.CTkButton(master=self.buttons_frame, text="Register Instead?", font=("Roboto", 15), command=self.show_register)
     self.go_to_register_button.pack(padx=5, pady=5, expand=False)
 
     # events
@@ -119,11 +119,11 @@ class AppPages(ctk.CTk):
     self.buttons_frame = ctk.CTkFrame(master=self.register_frame)
     self.buttons_frame.place(relx=.5, rely=.6, anchor=ctk.CENTER)
 
-    # login button
-    self.go_to_login_button = ctk.CTkButton(master=self.buttons_frame, text="Login", font=("Roboto", 15), command=self.show_login)
+    # 'go to login' button
+    self.go_to_login_button = ctk.CTkButton(master=self.buttons_frame, text="Login Instead?", font=("Roboto", 15), command=self.show_login)
     self.go_to_login_button.pack(padx=5, pady=5, expand=False)
 
-    # 'go to register' button
+    # register button
     self.register_button = ctk.CTkButton(master=self.buttons_frame, text="Register", font=("Roboto", 15), command=self.register)
     self.register_button.pack(padx=5, pady=5, expand=False)
 
