@@ -8,6 +8,7 @@ from drive_dataclasses import FilePath, User, MdbChannel, MdbFile
 def uuid4() -> str:
   return requests.get("https://www.uuidgenerator.net/api/version4").text
 
+
 class DiscordAPI(object):
   base: str = "https://discord.com/api/v9"
   header = {
@@ -23,40 +24,35 @@ class DiscordAPI(object):
     return cls.header["authorization"]
 
   @classmethod
-  def set_token(cls, token: str):
+  def set_token(cls, token: str) -> str:
     cls.header["authorization"] = token
     return token
 
   @classmethod
-  def set_database_server_id(cls, server_id: str):
+  def set_database_server_id(cls, server_id: str) -> str:
     cls.db_server_id = server_id
     return server_id
-
-  @classmethod                      # returns server id
-  def create_database_server(cls, user_id: int) -> str:
+  
+  @classmethod
+  def customize_server(cls, user_id: int) -> None:
     data_uri = pathlib.Path("./static/discord_drive_data_uri.txt").read_text()
 
-    _id = requests.post(f"{cls.base}/guilds", headers=cls.header, data=json.dumps({
+    requests.patch(f"{cls.base}/guilds/{cls.db_server_id}", headers=cls.header, data=json.dumps({
       "name": "DiscordDrive",
       "region": "us-west",
       "icon": data_uri,
       "verification_level": 0,
       "default_message_notifications": 1,
       "explicit_content_filter": 0
-    })).json().get('id')
-    
+    }))
+
     # clear server of channels
-    for channel in requests.get(f"{cls.base}/guilds/{_id}/channels", headers=cls.header).json():
+    for channel in requests.get(f"{cls.base}/guilds/{cls.db_server_id}/channels", headers=cls.header).json():
       requests.delete(f"{cls.base}/channels/{channel.get('id')}", headers=cls.header)
-    
-    cls.set_database_server_id(_id)
 
     # create root channel
     cls.create_channel(user_id, "/")
 
-    # set server id in class
-    return cls.db_server_id
-  
   @classmethod
   def create_channel(cls, user_id: int, path: str) -> str:
     name = uuid4()
@@ -85,6 +81,7 @@ class DiscordAPI(object):
   @classmethod
   def get_attachment_by_url(cls, url: str) -> dict:
     return requests.get(url).iter_content(1024)
+
 
 class MdbAPI(object):
   mdb_header: dict = { "Authorization": "dac5523e-2be9-4d8a-afe4-492b5bf297fa" }

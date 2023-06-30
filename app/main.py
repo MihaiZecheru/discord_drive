@@ -292,13 +292,24 @@ class AppPages(ctk.CTk):
     self.upload_file_button = ctk.CTkButton(master=self.upload_buttons_frame, text="Upload Files", command=lambda: self.upload_files(self.get_explorer_selected_files()))
     self.upload_file_button.pack(padx=5, side="right", fill="x", expand=True)
 
-  def show_token_entry_screen(self):
+  def show_token_and_server_id_entry_screen(self):
     # header
     self.header_frame = ctk.CTkFrame(master=self, bg_color="#2f3136")
     self.header_frame.pack(fill="both", expand=True)
 
     # header title
-    ctk.CTkLabel(master=self.header_frame, text="DiscordDrive", font=("Roboto", 27), fg_color=None).pack(pady=5)
+    ctk.CTkLabel(master=self.header_frame, text="DiscordDrive", font=("Roboto", 27), fg_color=None).pack()
+
+    # enter server_id frame
+    self.enter_server_id_frame = ctk.CTkFrame(master=self, bg_color="#2f3136")
+    self.enter_server_id_frame.pack(fill="both", expand=True)
+
+    # enter server_id label
+    ctk.CTkLabel(master=self.enter_server_id_frame, text="Enter Database Server ID", font=("Roboto", 15), fg_color=None).pack(pady=(0, 5))
+
+    # enter server_id entry
+    self.server_id_box = ctk.CTkEntry(master=self.enter_server_id_frame)
+    self.server_id_box.pack(pady=5)
 
     # enter token frame
     self.enter_token_frame = ctk.CTkFrame(master=self, bg_color="#2f3136")
@@ -311,13 +322,88 @@ class AppPages(ctk.CTk):
     self.token_box = ctk.CTkEntry(master=self.enter_token_frame)
     self.token_box.pack(pady=5)
 
-    # enter token button
-    self.enter_token_button = ctk.CTkButton(master=self.enter_token_frame, text="Enter", font=("Roboto", 15), command=self.enter_token)
-    self.enter_token_button.pack(pady=5)
+    # btns frame
+    self.btns_frame = ctk.CTkFrame(master=self.enter_token_frame, bg_color="#2f3136")
+    self.btns_frame.pack(pady=5)
+
+    # btns
+    self.register_user_button = ctk.CTkButton(master=self.btns_frame, text="Register", font=("Roboto", 15), command=self.create_user)
+    self.register_user_button.pack()
+    self.token_help_button = ctk.CTkButton(master=self.btns_frame, text="Token Help", font=("Roboto", 15), command=self.show_token_help)
+    self.token_help_button.pack(pady=(5, 0))
+    self.server_id_help_button = ctk.CTkButton(master=self.btns_frame, text="Server ID Help", font=("Roboto", 15), command=self.show_server_id_help)
+    self.server_id_help_button.pack(pady=(5, 0))
 
     # events
-    self.token_box.bind("<Return>", lambda event: self.enter_token())
+    self.token_box.bind("<Return>", lambda event: self.create_user())
     self.token_box.bind("<Control-BackSpace>", lambda event: self.token_box.delete(0, "end"))
+    self.server_id_box.bind("<Return>", lambda event: self.token_box.focus)
+    self.server_id_box.bind("<Control-BackSpace>", lambda event: self.server_id_box.delete(0, "end"))
+
+  def show_token_help(self):
+    # help window
+    hw = ctk.CTkToplevel(self)
+    hw.title("Finding Discord Token")
+    hw.geometry("1150x550")
+    hw.iconbitmap("./static/icon.ico")
+
+    info = """As a Discord User, your token is a unique identifier used to authorize your requests when interacting with Discord, either through the client or the API.
+
+    Your token is needed in order to interact with the Discord API to retrieve/upload files later on.
+
+    Here are the steps to finding your token:
+
+      1. Open discord in your browser
+
+      2. Press ctrl+shift+i (hold down ctrl & shift then press i) to open the "developer tools"
+
+      3. In the top of this menu there should be a menu titled "Network". Press it if you see it
+          - If you don't see it, click on the double-arrow at the top and select the "Network" menu from the dropdown
+
+      4. In this Network menu you can see all the requests that are sent to the API from the client as you interact with Discord. Find the "Filter" searchbox in the top-left
+
+      5. In this filter box, type "/api" (without the quotes) to filter the requests you're seeing to those from the Discord API
+
+      6. Press ctrl+r (hold down ctrl then press r) to refresh the page or do so by pressing the refresh button manually
+
+      7. Wait for the requests to begin appearing in the log you're viewing.
+
+      8. Click on any of the requests there except for any that end with ".json"
+
+      9. Click on the "headers" tab at the top of the request you're looking at. Note that it may have been selected by default
+
+      10. Scroll until you see the word "authorization". Your token is the value to the right of this word. Copy this value and paste it into DiscordDrive."""
+
+    ctk.CTkLabel(master=hw, text=info, font=("Roboto", 15)).pack()
+    hw.mainloop()
+
+  def show_server_id_help(self):
+    # help window
+    hw = ctk.CTkToplevel(self)
+    hw.title("Finding Discord Token")
+    hw.geometry("1000x375")
+    hw.iconbitmap("./static/icon.ico")
+
+    info = """Do not use any random server for this application!
+
+    You must:
+    
+    1. Make a brand new server. Don't worry about any of the customizations or the name, the program will change the server's settings automatically
+
+    2. Copy the ID
+
+    To copy the server's ID:
+
+    1. Enable developer mode, go to your user settings --> advanced --> toggle the checkbox at the top
+
+    2. Right click on the icon of the server you've just made
+
+    3. Click on "copy server id" at the bottom of
+
+    4. Paste it into DiscordDrive"""
+
+    ctk.CTkLabel(master=hw, text=info, font=("Roboto", 15)).pack()
+    hw.mainloop()
 
   def invalid_login(self):
     self.username_box.configure(state="normal")
@@ -327,6 +413,7 @@ class AppPages(ctk.CTk):
     self.username_box.delete(0, "end")
     self.password_box.delete(0, "end")
 
+    messagebox.showinfo("Login Failed", "Invalid username and/or password")
     self.username_box.focus()
 
   def invalid_register(self):
@@ -337,6 +424,7 @@ class AppPages(ctk.CTk):
     self.username_box.delete(0, "end")
     self.password_box.delete(0, "end")
     
+    messagebox.showinfo("Username Taken", "This username is unavailable")
     self.username_box.focus()
 
 class Application(AppPages):
@@ -375,7 +463,7 @@ class Application(AppPages):
       self.user = User(user.get("username"), user.get("password")).set_id(user.get("_id"))
 
       if user.get("token") is None:
-        return self.show_token_entry_screen()
+        return self.show_token_and_server_id_entry_screen()
       
       self.user.token = user.get("token")
       DiscordAPI.set_token(self.user.token)
@@ -408,21 +496,28 @@ class Application(AppPages):
 
     self.user = MdbAPI.create_user(username, password)
     self.register_frame.destroy()
-    self.show_token_entry_screen()
+    self.show_token_and_server_id_entry_screen()
 
-  def enter_token(self):
-    token = self.token_box.get()
+  def create_user(self):
+    token = self.token_box.get().strip()
     if not token: return None
 
+    server_id = self.server_id_box.get().strip()
+    if not server_id: return none
+
     self.token_box.configure(state="disabled")
-    self.enter_token_button.configure(state="disabled")
+    self.register_user_button.configure(state="disabled")
 
     self.user.set_token(token)
     DiscordAPI.set_token(token)
-    self.user.set_server_id(DiscordAPI.create_database_server(self.user.id))
-    DiscordAPI.set_database_server_id(self.user.server_id)
+
+    self.user.set_server_id(server_id)
+    DiscordAPI.set_database_server_id(server_id)
+    DiscordAPI.customize_server(self.user.id)
+
     for widget in self.winfo_children():
       widget.destroy()
+    
     self.show_main()
 
   def get_selected(self):
