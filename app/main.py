@@ -21,9 +21,9 @@ FIFTY_GB = 50000000000
 def convert_bytes(size):
   """ Convert bytes to KB, MB, GB, or TB """
   for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
-      if size < 1024.0:
-          return "%3.1f %s" % (size, x)
-      size /= 1024.0
+    if size < 1024.0:
+      return "%3.1f %s" % (size, x)
+    size /= 1024.0
 
 class AppPages(ctk.CTk):
   def __init__(self):
@@ -874,7 +874,7 @@ class Application(AppPages):
 
         # make sure there is only one preview frame
       with contextlib.suppress(Exception):
-          self.preview_frame.destroy()
+        self.preview_frame.destroy()
 
       # create viewing frame
       self.preview_frame = ctk.CTkScrollableFrame(master=self.upload_frame, bg_color="#212121", border_color="white", border_width=1, height=1000)
@@ -984,10 +984,10 @@ class Application(AppPages):
         else:
           # show text file
           with open(file, "r") as f:
-            self.preview_label = tk.Label(master=self.preview_frame, text=f.read(), bg="#212121", fg="white")
+            self.preview_label = tk.Label(master=self.preview_frame, text=f.read(), bg="#212121", fg="white", justify="left")
             self.preview_label.pack(padx=5, pady=5)
       except UnicodeDecodeError:
-        # show messagebox popup
+        # file had unicode error, display the filepath
         self.preview_label = tk.Label(master=self.preview_frame, text=file, bg="#212121", fg="white")
         self.preview_label.pack(padx=5, pady=5)
 
