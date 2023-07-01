@@ -25,6 +25,7 @@ def convert_bytes(size):
       return "%3.1f %s" % (size, x)
     size /= 1024.0
 
+
 class AppPages(ctk.CTk):
   def __init__(self):
     super().__init__()
@@ -538,7 +539,7 @@ class Application(AppPages):
     if not files: return
 
     if self.selected_dir is None:
-      return messagebox.showerror("Upload Files", "No folder has been selected as the destination for the file upload. Right click on a folder to select it.")
+      return messagebox.showerror("Upload Files", "No folder has been selected as the destination for the file upload. Left click on a folder to select it.")
 
     if not messagebox.askokcancel("Upload Files", f"Files will be uploaded to {self.selected_dir.path()}"): return
     for file in files:
@@ -928,7 +929,7 @@ class Application(AppPages):
             preview_label.pack(padx=5, pady=5)
       except UnicodeDecodeError as e:
         # show messagebox popup
-        preview_label = tk.Label(master=preview_win, text=file, bg="#212121", fg="white")
+        preview_label = tk.Label(master=preview_win, text=f"Cannot preview: {file}", bg="#212121", fg="white")
         preview_label.pack(padx=5, pady=5)
 
   def create_new_folder(self, filepath: FilePath) -> str:
