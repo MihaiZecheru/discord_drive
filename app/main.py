@@ -2,6 +2,7 @@ import contextlib
 import math
 import os
 import re
+import shutil
 from PIL import ImageTk, Image
 import customtkinter as ctk
 import tkinter.ttk as ttk
@@ -24,6 +25,9 @@ def convert_bytes(size):
     if size < 1024.0:
       return "%3.1f %s" % (size, x)
     size /= 1024.0
+
+def clear_temp_folder():
+  shutil.rmtree("./tmp")
 
 
 class AppPages(ctk.CTk):
@@ -996,6 +1000,7 @@ class Application(AppPages):
     return self.explorer_selected_files
 
 if __name__ == "__main__":
+  clear_tmp_folder()
   ctk.set_appearance_mode("dark")
   ctk.set_default_color_theme("dark-blue")
   Application().mainloop()
